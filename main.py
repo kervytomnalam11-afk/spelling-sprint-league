@@ -12,8 +12,8 @@ Screens / States
 """
 
 import pygame, sys, time, math, random
-import numpy as np
 import struct
+import array
 from enum import Enum, auto
 
 import config as C
@@ -1439,116 +1439,101 @@ class LeaderboardScreen:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ── MUSIC GENERATOR ──────────────────────────────────────────────────────────
+# ── MUSIC GENERATOR (pure Python, no numpy) ──────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _generate_music():
-    """Generate a looping chiptune-style background track using numpy."""
+    """Generate a looping chiptune-style background track using pure Python."""
     try:
         pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-        RATE   = 44100
-        BPM    = 128
-        BEAT   = int(RATE * 60 / BPM)
-        # 8-bar loop
-        LOOP   = BEAT * 32
-        t      = np.linspace(0, LOOP / RATE, LOOP, endpoint=False, dtype=np.float32)
+        RATE = 44100
+        BPM  = 128
+        BEAT = int(RATE * 60 / BPM)
+        LOOP = BEAT * 32
 
-        def note(freq, dur_beats, start_beat, wave="square", detune=0.0):
-            """Return a mono float32 array for one note."""
+        # flat buffer of floats
+        buf = [0.0] * LOOP
+
+        def add_note(freq, dur_beats, start_beat, vol=0.3, wave="square"):
             s = int(start_beat * BEAT)
-            n = int(dur_beats   * BEAT)
+            n = int(dur_beats * BEAT)
             if s >= LOOP:
                 return
             n = min(n, LOOP - s)
-            lt = t[s:s+n]
-            f  = freq + detune
-            if wave == "square":
-                sig = np.sign(np.sin(2 * np.pi * f * lt))
-            elif wave == "saw":
-                sig = 2.0 * (lt * f - np.floor(lt * f + 0.5))
-            else:  # sine
-                sig = np.sin(2 * np.pi * f * lt)
-            # ADSR envelope
             a = min(int(0.01 * RATE), n)
-            d = min(int(0.05 * RATE), n - a)
             r = min(int(0.08 * RATE), n)
-            env = np.ones(n, dtype=np.float32)
-            env[:a] = np.linspace(0, 1, a)
-            env[a:a+d] *= np.linspace(1, 0.7, d)
-            env[n-r:] *= np.linspace(1, 0, r)
-            return s, sig * env
+            for i in range(n):
+                t = i / RATE
+                if wave == "square":
+                    v = 1.0 if math.sin(2 * math.pi * freq * t) >= 0 else -1.0
+                elif wave == "saw":
+                    v = 2.0 * ((t * freq) % 1.0) - 1.0
+                else:
+                    v = math.sin(2 * math.pi * freq * t)
+                # simple attack/release envelope
+                if i < a:
+                    env = i / a
+                elif i >= n - r:
+                    env = (n - i) / r
+                else:
+                    env = 1.0
+                buf[s + i] += v * env * vol
 
-        # ── melody notes (C minor pentatonic: C D# F G A#) ──────────────────
+        # melody (C minor pentatonic)
         C4, Ds4, F4, G4, As4 = 261.63, 311.13, 349.23, 392.00, 466.16
         C5, G3               = 523.25, 196.00
-
-        melody_seq = [
-            (C4,  1, 0),  (G4,  1, 1),  (F4,  1, 2),  (As4, 1, 3),
-            (C5,  1, 4),  (As4, 1, 5),  (G4,  1, 6),  (F4,  1, 7),
-            (Ds4, 1, 8),  (F4,  1, 9),  (G4,  1,10),  (C4,  1,11),
-            (Ds4, 1,12),  (G4,  1,13),  (As4, 1,14),  (C5,  2,15),
-            (G4,  1,17),  (F4,  1,18),  (Ds4, 1,19),  (C4,  1,20),
-            (Ds4, 1,21),  (F4,  1,22),  (G4,  1,23),  (As4, 1,24),
-            (C5,  1,25),  (G4,  1,26),  (F4,  1,27),  (Ds4, 1,28),
-            (C4,  2,29),  (G3,  1,31),
+        melody = [
+            (C4,1,0),(G4,1,1),(F4,1,2),(As4,1,3),
+            (C5,1,4),(As4,1,5),(G4,1,6),(F4,1,7),
+            (Ds4,1,8),(F4,1,9),(G4,1,10),(C4,1,11),
+            (Ds4,1,12),(G4,1,13),(As4,1,14),(C5,2,15),
+            (G4,1,17),(F4,1,18),(Ds4,1,19),(C4,1,20),
+            (Ds4,1,21),(F4,1,22),(G4,1,23),(As4,1,24),
+            (C5,1,25),(G4,1,26),(F4,1,27),(Ds4,1,28),
+            (C4,2,29),(G3,1,31),
         ]
-        # ── bass line ────────────────────────────────────────────────────────
-        bass_seq = [
-            (C4/2, 2, b) for b in range(0, 32, 4)
-        ] + [
-            (G3,   2, b) for b in range(2, 32, 4)
-        ]
-        # ── hi-hat (noise bursts) ─────────────────────────────────────────────
-        hat_beats = list(range(0, 32))   # every beat
+        for freq, dur, start in melody:
+            add_note(freq, dur, start, vol=0.28, wave="square")
 
-        buf = np.zeros(LOOP, dtype=np.float32)
+        # bass
+        for b in range(0, 32, 4):
+            add_note(C4/2, 2, b, vol=0.18, wave="saw")
+            add_note(G3,   2, b+2, vol=0.18, wave="saw")
 
-        # layer melody
-        for freq, dur, start in melody_seq:
-            res = note(freq, dur, start, "square", detune=0.5)
-            if res:
-                s, sig = res
-                buf[s:s+len(sig)] += sig * 0.30
-
-        # layer bass (saw wave)
-        for freq, dur, start in bass_seq:
-            res = note(freq, dur, start, "saw")
-            if res:
-                s, sig = res
-                buf[s:s+len(sig)] += sig * 0.18
-
-        # hi-hat noise
-        for b in hat_beats:
-            s = int(b * BEAT)
-            n = int(0.05 * RATE)
-            if s + n > LOOP:
-                continue
-            hat = np.random.uniform(-1, 1, n).astype(np.float32)
-            env = np.linspace(1, 0, n) ** 2
-            buf[s:s+n] += hat * env * 0.12
-
-        # soft kick on beats 0, 4, 8 ...
+        # kick drum (sine sweep)
         for b in range(0, 32, 4):
             s = int(b * BEAT)
             n = int(0.15 * RATE)
             if s + n > LOOP:
                 continue
-            lt2 = np.linspace(0, 1, n)
-            freq_sweep = np.exp(np.linspace(np.log(200), np.log(50), n))
-            kick = np.sin(2 * np.pi * np.cumsum(freq_sweep) / RATE)
-            env  = np.linspace(1, 0, n) ** 1.5
-            buf[s:s+n] += kick.astype(np.float32) * env * 0.35
+            phase = 0.0
+            for i in range(n):
+                sweep = 200.0 * math.exp(-i / (0.03 * RATE))
+                phase += 2 * math.pi * sweep / RATE
+                env = (1.0 - i / n) ** 1.5
+                buf[s + i] += math.sin(phase) * env * 0.35
 
-        # normalize
-        peak = np.max(np.abs(buf))
-        if peak > 0:
-            buf /= peak
-        buf *= 0.55
+        # hi-hat (noise burst)
+        for b in range(0, 32):
+            s = int(b * BEAT)
+            n = int(0.04 * RATE)
+            if s + n > LOOP:
+                continue
+            for i in range(n):
+                env = (1.0 - i / n) ** 2
+                buf[s + i] += (random.random() * 2 - 1) * env * 0.10
 
-        # to stereo int16
-        stereo = np.stack([buf, buf], axis=1)
-        pcm    = (stereo * 32767).astype(np.int16)
-        sound  = pygame.sndarray.make_sound(pcm)
+        # normalize + pack to int16 stereo
+        peak = max(abs(x) for x in buf) or 1.0
+        scale = 0.55 / peak
+        raw = array.array('h', [0] * (LOOP * 2))
+        for i, v in enumerate(buf):
+            s16 = int(v * scale * 32767)
+            s16 = max(-32768, min(32767, s16))
+            raw[i * 2]     = s16  # L
+            raw[i * 2 + 1] = s16  # R
+
+        sound = pygame.sndarray.make_sound(raw)
         sound.set_volume(0.45)
         sound.play(loops=-1)
     except Exception as e:
