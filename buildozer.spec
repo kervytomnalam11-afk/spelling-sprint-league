@@ -17,7 +17,6 @@ android.api     = 33
 android.minapi  = 21
 android.ndk     = 25b
 android.archs   = arm64-v8a
-p4a.branch      = develop
 
 android.permissions  = INTERNET
 android.allow_backup = True
