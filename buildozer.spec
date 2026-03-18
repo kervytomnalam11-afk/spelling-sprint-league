@@ -8,25 +8,19 @@ source.include_exts = py,png,jpg,jpeg,json,atlas,ttf,otf
 
 version         = 1.0
 
-requirements    = python3,pygame2
+requirements    = python3,pygame
 
 orientation     = landscape
 fullscreen      = 1
 
-android.api         = 33
-android.minapi      = 21
-android.ndk         = 25b
-android.archs       = arm64-v8a
-android.build_tools_version = 33.0.2
+android.api     = 33
+android.minapi  = 21
+android.ndk     = 25b
+android.archs   = arm64-v8a
 
-android.permissions = INTERNET
-
+android.permissions  = INTERNET
 android.allow_backup = True
 
-# presplash / icon — replace these files in your repo to customise
-# presplash.filename = %(source.dir)s/assets/presplash.png
-# icon.filename      = %(source.dir)s/assets/icon.png
-
 [buildozer]
-log_level = 2
+log_level    = 2
 warn_on_root = 1
