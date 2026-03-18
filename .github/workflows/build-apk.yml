@@ -18,40 +18,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install system dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y git zip unzip openjdk-11-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 libffi-dev libssl-dev libsqlite3-dev ccache build-essential libltdl-dev python3-pip
-
-      - name: Install Buildozer
-        run: |
           pip install --upgrade pip
           pip install buildozer cython
 
-      - name: Accept licenses and install SDK tools
-        run: |
-          mkdir -p "$HOME/.android/licenses"
-          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n84831b9409646a918e30573bab4c9c91346d8abd' > "$HOME/.android/licenses/android-sdk-license"
-          printf '\nd975f751698a77b662f1254ddbeed3901e976f5a\n33b6937101352bc1c4d3f036da786f2e61af3b3e' > "$HOME/.android/licenses/android-sdk-preview-license"
-          echo "count=0" > "$HOME/.android/repositories.cfg"
-          ANDROID_SDK="$HOME/.buildozer/android/platform/android-sdk"
-          mkdir -p "$ANDROID_SDK/cmdline-tools"
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdtools.zip
-          unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools
-          mv /tmp/cmdtools/cmdline-tools "$ANDROID_SDK/cmdline-tools/latest"
-          export PATH="$ANDROID_SDK/cmdline-tools/latest/bin:$ANDROID_SDK/platform-tools:$PATH"
-          yes | sdkmanager --sdk_root="$ANDROID_SDK" --licenses 2>/dev/null || true
-          sdkmanager --sdk_root="$ANDROID_SDK" "platform-tools" "build-tools;33.0.2" "platforms;android-33"
+      - name: Build APK
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
+        with:
+          command: android debug
+          workdir: .
+          buildozer_version: stable
 
-      - name: Build APK (debug)
-        run: buildozer android debug
-        env:
-          ANDROID_HOME: /home/runner/.buildozer/android/platform/android-sdk
-
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: spelling-sprint-league-debug
-          path: bin/*.apk
+          path: ${{ steps.buildozer.outputs.filename }}
           if-no-files-found: error
           retention-days: 30
