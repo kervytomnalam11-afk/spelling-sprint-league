@@ -1,0 +1,75 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:       # also allows manual runs from the Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      # ── 1. Checkout your repo ──────────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Python ───────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # ── 3. Install system dependencies needed by Buildozer ─────────────────
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk \
+            autoconf libtool pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev libtinfo5 \
+            libffi-dev libssl-dev libsqlite3-dev \
+            ccache build-essential libltdl-dev \
+            python3-pip
+
+      # ── 4. Cache the .buildozer folder (huge time saver on reruns) ─────────
+      - name: Cache Buildozer global directory
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
+
+      # ── 5. Install Buildozer + Cython ──────────────────────────────────────
+      - name: Install Buildozer
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython
+
+      # ── 6. Accept Android SDK licences ────────────────────────────────────
+      - name: Accept Android SDK licences
+        run: |
+          mkdir -p $HOME/.android
+          echo "count=0" > $HOME/.android/repositories.cfg
+          yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager \
+            --licenses 2>/dev/null || true
+
+      # ── 7. Build the debug APK ─────────────────────────────────────────────
+      - name: Build APK (debug)
+        run: buildozer android debug
+        env:
+          ANDROID_HOME: ${{ env.HOME }}/.buildozer/android/platform/android-sdk
+
+      # ── 8. Upload the APK as a downloadable artifact ──────────────────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spelling-sprint-league-debug
+          path: bin/*.apk
+          if-no-files-found: error
+          retention-days: 30
